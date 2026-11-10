@@ -1,19 +1,12 @@
-"""
-Pump Condition Classification - Shared Team ML Pipeline
-=========================================================
-Assignment Team Responsibilities:
-  - Abel:   Normal observations & base pipeline setup (Section 1)
-  - Mearwi: Warning observations & warning ingestion code (Section 2)
-  - Fitsum: Fault observations & fault safety evaluation code (Section 3)
-"""
-
 import sys
 from pathlib import Path
 import warnings
 import pandas as pd
 import numpy as np
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, confusion_matrix, f1_score, precision_score, recall_score
 
-# Ensure console output handles UTF-8 / non-ASCII gracefully on Windows
 if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 warnings.filterwarnings('ignore')
@@ -25,15 +18,7 @@ FEATURE_COLS = ['vibration_mm_s', 'rpm',
 VALID_LABELS = {'Normal', 'Warning', 'Fault'}
 
 
-# =====================================================================
-# SECTION 1: ABEL'S CONTRIBUTION (Normal Data & Base Pipeline Setup)
-# =====================================================================
-
 def validate_schema_and_quality(df, filename):
-    """
-    Abel's data validation helper: checks schema, nulls, labels, and numeric types.
-    Reports issues without silently altering or dropping questionable data.
-    """
     issues = []
     if list(df.columns) != EXPECTED_COLS:
         issues.append(
@@ -61,9 +46,6 @@ def validate_schema_and_quality(df, filename):
 
 
 def load_normal_data(data_dir='data'):
-    """
-    Abel's function: Loads and validates Normal pump observations from data/abel_normal.csv.
-    """
     csv_path = Path(data_dir) / 'abel_normal.csv'
     if not csv_path.exists():
         print(f"[-] Abel (Normal): File not found ({csv_path.name})")
@@ -74,7 +56,6 @@ def load_normal_data(data_dir='data'):
         print(f"[!] Abel (Normal): {csv_path.name} is empty (header only).")
         return None, [f"{csv_path.name}: 0 rows"]
 
-    # Verify Abel's file only contains Normal observations
     abnormal_labels = set(df['label'].dropna().unique()) - {'Normal'}
     if abnormal_labels:
         print(
@@ -90,13 +71,7 @@ def load_normal_data(data_dir='data'):
     return df, issues
 
 
-# =====================================================================
-# SECTION 2: MEARWI'S CONTRIBUTION (Warning Data Ingestion)
-# =====================================================================
 def load_warning_data(data_dir='data'):
-    """
-    Mearwi's function: Loads and validates Warning pump observations.
-    """
     csv_candidates = [Path(data_dir) / 'mearwi_warning.csv',
                       Path(data_dir) / 'merawi_warning.csv']
     csv_path = next((p for p in csv_candidates if p.exists()
@@ -114,15 +89,58 @@ def load_warning_data(data_dir='data'):
     return df, issues
 
 
+def load_fault_data(data_dir='data'):
+    csv_path = Path(data_dir) / 'fitsum_fault.csv'
+    if not csv_path.exists():
+        print(f"[-] Fitsum (Fault): File not found ({csv_path.name})")
+        return None, ["Missing Fault data"]
+    df = pd.read_csv(csv_path)
+    issues = validate_schema_and_quality(df, csv_path.name)
+    if issues:
+        print(f"[!] Issues in {csv_path.name}: {issues}")
+    else:
+        print(f"[+] Fitsum (Fault): {len(df)} observations successfully loaded from {csv_path.name}")
+    return df, issues
+
+
+def evaluate_fault_safety_metrics(y_true, y_pred):
+    if 'Fault' in y_true.values:
+        f_rec = recall_score(y_true, y_pred, labels=['Fault'], average='micro', zero_division=0)
+        f_prec = precision_score(y_true, y_pred, labels=['Fault'], average='micro', zero_division=0)
+        f_f1 = f1_score(y_true, y_pred, labels=['Fault'], average='micro', zero_division=0)
+        print("\n" + "-" * 65)
+        print("CRITICAL SAFETY METRIC - FAULT DETECTION (Fitsum's Module):")
+        print("-" * 65)
+        print(f"  * Fault Recall:    {f_rec:.4f}  (Ability to catch breakdowns)")
+        print(f"  * Fault Precision: {f_prec:.4f}  (Reliability of warnings)")
+        print(f"  * Fault F1 Score:  {f_f1:.4f}")
+
+
+def train_and_evaluate(df):
+    X = df[FEATURE_COLS]
+    y = df['label']
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_test)
+    eval_labels = ['Normal', 'Warning', 'Fault']
+    print("\nConfusion Matrix:")
+    print(confusion_matrix(y_test, y_pred, labels=eval_labels))
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred, labels=eval_labels, zero_division=0))
+    print(f"Macro F1 Score: {f1_score(y_test, y_pred, average='macro', zero_division=0):.4f}")
+    evaluate_fault_safety_metrics(y_test, y_pred)
+    return model
+
+
 def main():
     print("=" * 65)
     print("PUMP CONDITION CLASSIFICATION - THREE-CLASS MODEL PIPELINE")
     print("=" * 65)
 
-    # 1. Abel's Section
     normal_df, _ = load_normal_data()
-    # 2. Mearwi's Section
     warning_df, _ = load_warning_data()
+    fault_df, _ = load_fault_data()
 
     if normal_df is not None:
         print("\nAbel's Normal Observations Summary:")
@@ -130,11 +148,14 @@ def main():
         print(f"  Features loaded: {FEATURE_COLS}")
         print("  Status: Normal data verified and ready for team integration.")
 
-    print("\nNext Team Contributions:")
-    print("  - Section 2: Mearwi will add load_warning_data() & 2-class integration.")
-    print("  - Section 3: Fitsum will add load_fault_data() & 3-class safety evaluation.")
+    loaded_dfs = [df for df in [normal_df, warning_df, fault_df] if df is not None]
+    if not loaded_dfs:
+        print("\n[!] Error: No data files found. Please ensure the 'data/' directory exists and contains the CSV files.")
+        return 1
 
-    # Required safety notice
+    combined_df = pd.concat(loaded_dfs, ignore_index=True)
+    train_and_evaluate(combined_df)
+
     print("\n" + "=" * 65)
     print("CAUTION - ENGINEERING SAFETY NOTICE:")
     print("=" * 65)
