@@ -1,0 +1,11 @@
+﻿# Pump Condition Classification
+
+A group project to classify pump observations into Normal, Warning, or Fault using labelled historical data. Example input features include vibration, RPM, temperature, pressure, and operating hours.
+
+## Team and Responsibilities
+
+| Team Member | Label Responsibility     |
+|-------------|--------------------------|
+| Abel        | Normal observations      |
+| Merawi      | Warning observations     |
+| Fitsum      | Fault observations       |
